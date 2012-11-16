@@ -23,12 +23,12 @@
  */
 
 #define BOOST_TEST_DYN_LINK
-#define BOOST_TEST_MODULE kafkaconnect
+#define BOOST_TEST_MODULE kafka
 #include <boost/test/unit_test.hpp>
 
 #include <boost/thread.hpp>
 
-#include "../producer.hpp"
+#include "../../lib/kafka/producer.hpp"
 
 void handle_error(boost::system::error_code const& error, int expected_error, std::string const& expected_message)
 {
@@ -43,7 +43,7 @@ BOOST_AUTO_TEST_CASE( basic_message_test )
 	boost::asio::ip::tcp::acceptor acceptor(io_service, boost::asio::ip::tcp::endpoint(boost::asio::ip::tcp::v4(), 12345));
 	boost::thread bt(boost::bind(&boost::asio::io_service::run, &io_service));
 
-	kafkaconnect::producer producer(io_service);
+	kafka::producer producer(kafka::encoder::COMPRESSION_NONE, io_service);
 	BOOST_CHECK_EQUAL(producer.is_connected(), false);
 	producer.connect("localhost", 12345);
 
@@ -67,16 +67,16 @@ BOOST_AUTO_TEST_CASE( basic_message_test )
 	boost::system::error_code error;
 	size_t len = socket.read_some(boost::asio::buffer(buffer), error);
 
-	BOOST_CHECK_EQUAL(len, 4 + 2 + 2 + strlen("mice") + 4 + 4 + 9 + strlen("so long and thanks for all the fish"));
-	BOOST_CHECK_EQUAL(buffer[3], 2 + 2 + strlen("mice") + 4 + 4 + 9 + strlen("so long and thanks for all the fish"));
-	BOOST_CHECK_EQUAL(buffer[5], 0);
+	BOOST_CHECK_EQUAL(len, 4 + 2 + 2 + strlen("mice") + 4 + 4 + 10 + strlen("so long and thanks for all the fish"));
+	BOOST_CHECK_EQUAL(buffer[3], 2 + 2 + strlen("mice") + 4 + 4 + 10 + strlen("so long and thanks for all the fish"));
+	BOOST_CHECK_EQUAL(buffer[5], kafka::encoder::message_format_magic_number);
 	BOOST_CHECK_EQUAL(buffer[7], strlen("mice"));
 	BOOST_CHECK_EQUAL(buffer[8], 'm');
 	BOOST_CHECK_EQUAL(buffer[8 + strlen("mice") - 1], 'e');
 	BOOST_CHECK_EQUAL(buffer[11 + strlen("mice")], 42);
-	BOOST_CHECK_EQUAL(buffer[15 + strlen("mice")], 9 + strlen("so long and thanks for all the fish"));
+	BOOST_CHECK_EQUAL(buffer[15 + strlen("mice")], 10 + strlen("so long and thanks for all the fish"));
 	BOOST_CHECK_EQUAL(buffer[16 + strlen("mice")], 0);
-	BOOST_CHECK_EQUAL(buffer[25 + strlen("mice")], 's');
+	BOOST_CHECK_EQUAL(buffer[26 + strlen("mice")], 's');
 
 	work.reset();
 	io_service.stop();

@@ -21,7 +21,7 @@ Run this to generate the makefile for your system. Do this first.
 make
 ```
 
-builds the producer example and the KafkaConnect library
+builds the producer example and the Kafka library
 
 
 ```bash
@@ -39,12 +39,12 @@ to install as a shared library to 'default' locations (/usr/local/lib and /usr/l
 
 
 ## Usage
-Example.cpp is a very basic Kafka Producer
+src/examples/produce.cpp is a very basic Kafka Producer
 
 
 ## API docs
 There isn't much code, if I get around to writing the other parts of the library I'll document it sensibly,
-for now have a look at the header file:  /src/producer.hpp
+for now have a look at the header file:  /src/lib/kafka/producer.hpp
 
 
 ## Contact for questions

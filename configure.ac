@@ -21,22 +21,38 @@
 # @benjamg
 #
 
-AC_INIT([LibKafkaConnect], [0.2])
+#
+# Boost library check:  https://github.com/tsuna/boost.m4
+#
+
+AC_INIT([LibKafka], [0.7])
 AC_PREREQ([2.59])
 
 AC_CONFIG_AUX_DIR([build-aux])
-AM_INIT_AUTOMAKE([foreign -Wall])
+AM_INIT_AUTOMAKE([-Wall -Wno-extra-portability -Werror foreign])
+
+#ACLOCAL_AMFLAGS = -I .:/opt/local/include
 
 AC_PROG_LIBTOOL
 AC_PROG_CXX
 AC_PROG_CPP
+AC_PROG_INSTALL
+AC_C_CONST
+AC_C_INLINE
+AC_TYPE_SIZE_T
 
 AC_CONFIG_MACRO_DIR([build-aux/m4])
+
+BOOST_REQUIRE([1.46.1])
+BOOST_FOREACH
+BOOST_ASIO
+BOOST_TEST
+BOOST_IOSTREAMS
 
 #
 # Version number
 #
-AC_SUBST([KAFKACONNECT_VERSION], [1:2:0])
+AC_SUBST([KAFKA_VERSION], [0:7:0])
 
 AC_CONFIG_FILES([Makefile])
 AC_OUTPUT
