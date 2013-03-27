@@ -27,7 +27,7 @@ BOOST_AUTO_TEST_CASE( invalid_target )
 	boost::thread bt(boost::bind(&boost::asio::io_service::run, &io_service));
 
 	bool called = false;
-	kafkaconnect::producer producer(io_service, boost::bind(&handle_error, _1, 111, "Connection refused", boost::ref(called)));
+	kafkaconnect::producer producer(io_service, boost::bind(&handle_error, _1,  boost::system::errc::connection_refused, "Connection refused", boost::ref(called)));
 
 	BOOST_CHECK_EQUAL(producer.is_connected(), false);
 	producer.connect("localhost", 12345);
