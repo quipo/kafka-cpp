@@ -44,23 +44,23 @@ class producer
 public:
 	typedef boost::function<void(boost::system::error_code const&)> error_handler_function;
 
-	producer(const uint8_t compression, boost::asio::io_service& io_service, const error_handler_function& error_handler = error_handler_function());
+	producer(compression_type const compression, boost::asio::io_service& io_service, error_handler_function const& error_handler = error_handler_function());
 	~producer();
 
-	bool connect(const std::string& hostname, const uint16_t port);
-	bool connect(const std::string& hostname, const std::string& servicename);
+	bool connect(std::string const& hostname, uint16_t const port);
+	bool connect(std::string const& hostname, std::string const& servicename);
 
 	bool close();
 	bool is_connected() const;
 	bool is_connecting() const;
 
-	bool send(std::string const& message, const std::string& topic, const uint32_t partition = kafka::use_random_partition)
+	bool send(std::string const& message, std::string const& topic, uint32_t const partition = use_random_partition)
 	{
 		boost::array<std::string, 1> messages = { { message } };
 		return send(messages, topic, partition);
 	}
 
-	bool send(char const* message, const std::string& topic, const uint32_t partition = kafka::use_random_partition)
+	bool send(char const* message, std::string const& topic, uint32_t const partition = use_random_partition)
 	{
 		boost::array<std::string, 1> messages = { { message } };
 		return send(messages, topic, partition);
@@ -68,7 +68,7 @@ public:
 
 	// TODO: replace this with a sending of the buffered data so encode is called prior to send this will allow for decoupling from the encoder
 	template <typename List>
-	bool send(const List& messages, const std::string& topic, const uint32_t partition = kafka::use_random_partition)
+	bool send(List const& messages, std::string const& topic, uint32_t const partition = use_random_partition)
 	{
 		if (!is_connected())
 		{
@@ -79,7 +79,7 @@ public:
 		boost::asio::streambuf* buffer = new boost::asio::streambuf();
 		std::ostream stream(buffer);
 
-		kafka::encoder::request(stream, topic, partition, messages, _compression);
+		kafka::request(stream, topic, partition, messages, _compression);
 
 		boost::asio::async_write(
 			_socket, *buffer,
@@ -93,7 +93,7 @@ public:
 private:
 	bool _connected;
 	bool _connecting;
-	uint8_t _compression;
+	compression_type _compression;
 	boost::asio::ip::tcp::resolver _resolver;
 	boost::asio::ip::tcp::socket _socket;
 	error_handler_function _error_handler;
