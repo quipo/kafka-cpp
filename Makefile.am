@@ -12,15 +12,16 @@
 AUTOMAKE_OPTIONS=foreign
 
 ACLOCAL_AMFLAGS = -I build-aux/m4 ${ACLOCAL_FLAGS}
-AM_CPPFLAGS = $(DEPS_CFLAGS) $(BOOST_CPPFLAGS) -I/opt/local/include
-#AM_LDFLAGS = -lboost_system$(BOOST_LIB_SUFFIX) $(BOOST_THREADS_LDFLAGS)
-AM_LDFLAGS = $(BOOST_THREADS_LDFLAGS) -L/opt/local/lib
-#libkafka_LIBS = -L/opt/local/lib -lboost_filesystem-mt -lboost_system-mt -lboost_thread-mt -lkafka
-LIBS = -L/opt/local/lib $(BOOST_THREAD_LIBS) \
-	-lboost_filesystem-mt -lboost_system-mt \
-	-lboost_thread-mt -lboost_iostreams-mt
+
+AM_CXXFLAGS = $(DEPS_CFLAGS) $(BOOST_CPPFLAGS) -fPIC -Wall -Wextra -std=c++11 -I/opt/local/include
+AM_LDFLAGS = $(BOOST_SYSTEM_LDFLAGS) $(BOOST_IOSTREAMS_LDFLAGS) $(BOOST_THREAD_LDFLAGS) -L/opt/local/lib
+
+LIBS = $(BOOST_SYSTEM_LIBS) $(BOOST_IOSTREAMS_LIBS) $(BOOST_THREAD_LIBS)
+
 EXAMPLE_LIBS = $(LIBS) -lkafka
-TEST_LIBS = $(DEPS_LIBS) $(EXAMPLE_LIBS) -lboost_unit_test_framework-mt
+
+TEST_LIBS = $(DEPS_LIBS) $(EXAMPLE_LIBS) $(BOOST_UNIT_TEST_FRAMEWORK_LIBS)
+
 
 #
 # Shared Library
@@ -35,6 +36,7 @@ libkafka_la_LDFLAGS = -version-info $(KAFKA_VERSION)
 kafka_includedir = $(includedir)/kafka
 kafka_include_HEADERS = src/lib/kafka/producer.hpp \
 	src/lib/kafka/encoder.hpp
+
 
 #
 # Examples
@@ -56,7 +58,6 @@ check_PROGRAMS = tests/encoder \
 	tests/producer_error
 
 TESTS = ${check_PROGRAMS}
-
 
 tests_encoder_SOURCES = src/tests/kafka/encoder_tests.cpp
 tests_encoder_LDADD = $(TEST_LIBS)
