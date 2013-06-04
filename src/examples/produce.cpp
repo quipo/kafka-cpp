@@ -33,7 +33,7 @@ int main(int argc, char* argv[])
 	std::auto_ptr<boost::asio::io_service::work> work(new boost::asio::io_service::work(io_service));
 	boost::thread bt(boost::bind(&boost::asio::io_service::run, &io_service));
 
-	kafka::producer producer(kafka::encoder::COMPRESSION_NONE, io_service);
+	kafka::producer producer(kafka::compression_type::none, io_service);
 	producer.connect(hostname, port);
 
 	while (!producer.is_connected())

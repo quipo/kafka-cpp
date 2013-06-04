@@ -27,7 +27,7 @@
 
 namespace kafka {
 
-producer::producer(const uint8_t compression, boost::asio::io_service& io_service, const error_handler_function& error_handler)
+producer::producer(const compression_type compression, boost::asio::io_service& io_service, const error_handler_function& error_handler)
 	: _connected(false)
 	, _connecting(false)
 	, _compression(compression)
@@ -60,6 +60,8 @@ bool producer::connect(const std::string& hostname, const std::string& servicena
 			boost::asio::placeholders::error, boost::asio::placeholders::iterator
 		)
 	);
+
+	return true;
 }
 
 bool producer::close()
@@ -68,6 +70,8 @@ bool producer::close()
 
 	_connected = false;
 	_socket.close();
+
+	return true;
 }
 
 bool producer::is_connected() const

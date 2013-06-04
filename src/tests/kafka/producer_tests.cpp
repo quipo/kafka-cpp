@@ -30,20 +30,22 @@
 
 #include "../../lib/kafka/producer.hpp"
 
-void handle_error(boost::system::error_code const& error, int expected_error, std::string const& expected_message)
-{
-	BOOST_CHECK_EQUAL(expected_error, error.value());
-	BOOST_CHECK_EQUAL(expected_message, error.message());
-}
-
 BOOST_AUTO_TEST_CASE( basic_message_test )
 {
+	std::string const message   = "so long and thanks for all the fish";
+	std::string const topic     = "mice";
+	uint32_t const    partition = 42;
+
+	// convenience
+	uint32_t const    t_len     = topic.size();
+	uint32_t const    m_len     = message.size();
+
 	boost::asio::io_service io_service;
 	boost::shared_ptr<boost::asio::io_service::work> work(new boost::asio::io_service::work(io_service));
 	boost::asio::ip::tcp::acceptor acceptor(io_service, boost::asio::ip::tcp::endpoint(boost::asio::ip::tcp::v4(), 12345));
 	boost::thread bt(boost::bind(&boost::asio::io_service::run, &io_service));
 
-	kafka::producer producer(kafka::encoder::COMPRESSION_NONE, io_service);
+	kafka::producer producer(kafka::compression_type::none, io_service);
 	BOOST_CHECK_EQUAL(producer.is_connected(), false);
 	producer.connect("localhost", 12345);
 
@@ -60,24 +62,25 @@ BOOST_AUTO_TEST_CASE( basic_message_test )
 	BOOST_CHECK(!producer.is_connecting());
 
 	std::vector<std::string> messages;
-	messages.push_back("so long and thanks for all the fish");
-	producer.send(messages, "mice", 42);
+	messages.push_back(message);
+	producer.send(messages, topic, partition);
 
 	boost::array<char, 1024> buffer;
 	boost::system::error_code error;
 	size_t len = socket.read_some(boost::asio::buffer(buffer), error);
 
-	BOOST_CHECK_EQUAL(len, 4 + 2 + 2 + strlen("mice") + 4 + 4 + 10 + strlen("so long and thanks for all the fish"));
-	BOOST_CHECK_EQUAL(buffer[3], 2 + 2 + strlen("mice") + 4 + 4 + 10 + strlen("so long and thanks for all the fish"));
-	BOOST_CHECK_EQUAL(buffer[5], kafka::encoder::message_format_magic_number);
-	BOOST_CHECK_EQUAL(buffer[7], strlen("mice"));
-	BOOST_CHECK_EQUAL(buffer[8], 'm');
-	BOOST_CHECK_EQUAL(buffer[8 + strlen("mice") - 1], 'e');
-	BOOST_CHECK_EQUAL(buffer[11 + strlen("mice")], 42);
-	BOOST_CHECK_EQUAL(buffer[15 + strlen("mice")], 10 + strlen("so long and thanks for all the fish"));
-	BOOST_CHECK_EQUAL(buffer[16 + strlen("mice")], 0);
-	BOOST_CHECK_EQUAL(buffer[26 + strlen("mice")], 's');
+	BOOST_CHECK_EQUAL(buffer[3], len - 4);                                                // request size is 4 less than total size
+	BOOST_CHECK_EQUAL(buffer[5], 0);                                                      // type is produce
+	BOOST_CHECK_EQUAL(buffer[7], t_len);                                                  // topic length
+	BOOST_CHECK_EQUAL(std::string(&buffer[8], t_len), topic);                             // topic
+	BOOST_CHECK_EQUAL(buffer[11 + t_len], partition);                                     // partition
+	BOOST_CHECK_EQUAL(buffer[15 + t_len], kafka::message_format_header_size + m_len);     // message set size for produce total of payloads & headers
+	BOOST_CHECK_EQUAL(buffer[19 + t_len], kafka::message_format_extra_data_size + m_len); // message length is payload length + magic number + checksum
+	BOOST_CHECK_EQUAL(buffer[20 + t_len], kafka::message_format_magic_number);            // magic number
+	BOOST_CHECK_EQUAL(buffer[21 + t_len], (uint8_t)kafka::compression_type::none);        // compression value
+	BOOST_CHECK_EQUAL(std::string(&buffer[26 + t_len], m_len), message);                  // payload
 
 	work.reset();
 	io_service.stop();
 }
+
