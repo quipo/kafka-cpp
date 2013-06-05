@@ -83,7 +83,7 @@ inline std::ostream& raw(std::ostream& stream, const Data& data)
 	return stream;
 }
 
-std::ostream& payload(std::ostream& stream, std::string const& payload, compression_type const& compression)
+inline std::ostream& payload(std::ostream& stream, std::string const& payload, compression_type const& compression)
 {
 	std::string msg = compress(payload, compression);
 
