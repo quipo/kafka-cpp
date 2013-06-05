@@ -137,8 +137,9 @@ void request(std::ostream& stream, std::string const& topic, uint32_t const part
 	// Packet format is ... request size (4 bytes)
 	encoder::raw(stream, htonl(request_size));
 
-	// ... magic number (2 bytes)
-	encoder::raw(stream, htons(request_type::produce));
+	// ... request_type (2 bytes)
+	uint16_t type = static_cast<uint16_t>(request_type::produce); // some compilers don't like enum class yet
+	encoder::raw(stream, htons(type));
 
 	// ... topic string size (2 bytes) & topic string
 	encoder::raw(stream, htons(topic.size()));
