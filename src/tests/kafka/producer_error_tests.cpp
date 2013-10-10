@@ -16,11 +16,12 @@
 #include "../../lib/kafka/encoder.hpp"
 #include "../../lib/kafka/producer.hpp"
 
-void handle_error(boost::system::error_code const& error, int expected_error, std::string const& expected_message, bool& called)
+bool handle_invalid_target_error_called{false};
+
+void handle_invalid_target_error(boost::system::error_code const& error)
 {
-	BOOST_CHECK_EQUAL(expected_message, error.message());
-	BOOST_CHECK_EQUAL(expected_error, error.value());
-	called = true;
+	BOOST_CHECK_EQUAL( boost::asio::error::connection_refused, error.value());
+	handle_invalid_target_error_called = true;
 }
 
 BOOST_AUTO_TEST_CASE( invalid_target )
@@ -29,21 +30,21 @@ BOOST_AUTO_TEST_CASE( invalid_target )
 	boost::shared_ptr<boost::asio::io_service::work> work(new boost::asio::io_service::work(io_service));
 	boost::thread bt(boost::bind(&boost::asio::io_service::run, &io_service));
 
-	bool called = false;
-	kafka::producer producer(kafka::compression_type::none, io_service, boost::bind(&handle_error, _1, boost::asio::error::connection_refused, "Connection refused", boost::ref(called)));
+	kafka::producer producer(kafka::compression_type::none, io_service );
 
 	BOOST_CHECK_EQUAL(producer.is_connected(), false);
-	producer.connect("localhost", 12345);
+	producer.connect("localhost", 12345, handle_invalid_target_error);
 
 	boost::this_thread::sleep(boost::posix_time::milliseconds(100));
-	BOOST_CHECK_EQUAL(producer.is_connected(), false);
-	BOOST_CHECK(called);
+
+	bool temp = producer.is_connected();
+	BOOST_CHECK_EQUAL(temp, false);
+	BOOST_CHECK(handle_invalid_target_error_called);
 
 	work.reset();
 	io_service.stop();
 }
 
-/* TODO: work out why this test doesn't call the exception handler
 BOOST_AUTO_TEST_CASE( target_lost )
 {
 	boost::asio::io_service io_service;
@@ -52,8 +53,7 @@ BOOST_AUTO_TEST_CASE( target_lost )
 
 	boost::asio::ip::tcp::acceptor acceptor(io_service, boost::asio::ip::tcp::endpoint(boost::asio::ip::tcp::v4(), 12345));
 
-	bool called = false;
-	kafka::producer producer(kafka::encoder::COMPRESSION_NONE, io_service, boost::bind(&handle_error, _1, -1, "", boost::ref(called)));
+	kafka::producer producer(kafka::compression_type::none, io_service);
 
 	BOOST_CHECK_EQUAL(producer.is_connected(), false);
 	producer.connect("localhost", 12345);
@@ -67,16 +67,18 @@ BOOST_AUTO_TEST_CASE( target_lost )
 	acceptor.close();
 	socket.close();
 
-	boost::this_thread::sleep(boost::posix_time::milliseconds(100));
+	kafka::message_ptr_t encoded_msg = producer.encode("message", "topic");
+	BOOST_CHECK_EQUAL(producer.send(encoded_msg),false);
 
-	producer.send("message", "topic");
-
-	boost::this_thread::sleep(boost::posix_time::milliseconds(100));
-
+	// do we detect error
 	BOOST_CHECK_EQUAL(producer.is_connected(), false);
-	BOOST_CHECK(called);
+
 
 	work.reset();
 	io_service.stop();
 }
-*/
+
+/*
+ * TODO add tests that detect send failures. Not sure how to reproduce these at the moment
+ */
+//*/

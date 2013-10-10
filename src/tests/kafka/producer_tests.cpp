@@ -63,7 +63,8 @@ BOOST_AUTO_TEST_CASE( basic_message_test )
 
 	std::vector<std::string> messages;
 	messages.push_back(message);
-	producer.send(messages, topic, partition);
+	kafka::message_ptr_t encoded_msg = producer.encode(messages, topic, partition);
+	producer.send(encoded_msg);
 
 	boost::array<char, 1024> buffer;
 	boost::system::error_code error;
