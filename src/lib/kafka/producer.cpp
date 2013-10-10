@@ -27,13 +27,12 @@
 
 namespace kafka {
 
-producer::producer(const compression_type compression, boost::asio::io_service& io_service, const error_handler_function& error_handler)
+producer::producer(const compression_type compression, boost::asio::io_service& io_service)
 	: _connected(false)
 	, _connecting(false)
 	, _compression(compression)
 	, _resolver(io_service)
 	, _socket(io_service)
-	, _error_handler(error_handler)
 {
 }
 
@@ -42,12 +41,16 @@ producer::~producer()
 	close();
 }
 
-bool producer::connect(const std::string& hostname, const uint16_t port)
+bool producer::connect(std::string const& hostname
+		, uint16_t const port
+		, connect_error_handler_function error_handler)
 {
-	return connect(hostname, boost::lexical_cast<std::string>(port));
+	return connect(hostname, boost::lexical_cast<std::string>(port), error_handler);
 }
 
-bool producer::connect(const std::string& hostname, const std::string& servicename)
+bool producer::connect(std::string const& hostname
+		, std::string const& servicename
+		, connect_error_handler_function error_handler)
 {
 	if (_connecting) { return false; }
 	_connecting = true;
@@ -56,8 +59,11 @@ bool producer::connect(const std::string& hostname, const std::string& servicena
 	_resolver.async_resolve(
 		query,
 		boost::bind(
-			&producer::handle_resolve, this,
-			boost::asio::placeholders::error, boost::asio::placeholders::iterator
+			&producer::handle_resolve
+				, this
+				, boost::asio::placeholders::error
+				, boost::asio::placeholders::iterator
+				, error_handler
 		)
 	);
 
@@ -84,33 +90,57 @@ bool producer::is_connecting() const
 	return _connecting;
 }
 
-void producer::handle_resolve(const boost::system::error_code& error_code, boost::asio::ip::tcp::resolver::iterator endpoints)
+void producer::handle_resolve(const boost::system::error_code& error_code
+		, boost::asio::ip::tcp::resolver::iterator endpoints
+		, connect_error_handler_function error_handler)
 {
 	if (!error_code)
 	{
 		boost::asio::ip::tcp::endpoint endpoint = *endpoints;
 		_socket.async_connect(
-			endpoint,
-			boost::bind(
-				&producer::handle_connect, this,
-				boost::asio::placeholders::error, ++endpoints
-			)
-		);
+			endpoint
+			, boost::bind(
+					&producer::handle_connect
+					, this
+					, boost::asio::placeholders::error
+					, ++endpoints
+					, error_handler
+					)
+			);
 	}
 	else
 	{
 		_connecting = false;
-		fail_fast_error_handler(error_code);
+		if (error_handler == nullptr)
+		{
+			throw boost::system::system_error(error_code);
+		} else {
+			error_handler(error_code);
+		}
 	}
 }
 
-void producer::handle_connect(const boost::system::error_code& error_code, boost::asio::ip::tcp::resolver::iterator endpoints)
+void producer::handle_connect(const boost::system::error_code& error_code
+		, boost::asio::ip::tcp::resolver::iterator endpoints
+		, connect_error_handler_function error_handler)
 {
+	// this check needs a resolution of boost https://svn.boost.org/trac/boost/ticket/8795
 	if (!error_code)
 	{
 		// The connection was successful.
 		_connecting = false;
 		_connected = true;
+
+		// start a read that will tell us the connection has closed
+		std::shared_ptr<boost::array<char, 1>> buf(new boost::array<char, 1>);
+		boost::asio::async_read(_socket
+					, boost::asio::buffer(*buf)
+					, boost::bind(&producer::handle_dummy_read
+									, this
+									, buf
+									, boost::asio::placeholders::error
+								  )
+					);
 	}
 	else if (endpoints != boost::asio::ip::tcp::resolver::iterator())
 	{
@@ -118,23 +148,36 @@ void producer::handle_connect(const boost::system::error_code& error_code, boost
 
 		// The connection failed, but we have more potential endpoints so throw it back to handle resolve
 		_socket.close();
-		handle_resolve(boost::system::error_code(), endpoints);
+		handle_resolve(boost::system::error_code(), endpoints, error_handler);
 	}
 	else
 	{
 		_connecting = false;
-		fail_fast_error_handler(error_code);
+		if (error_handler == nullptr)
+		{
+			throw boost::system::system_error(error_code);
+		} else {
+			error_handler(error_code);
+		}
 	}
 }
 
-void producer::handle_write_request(const boost::system::error_code& error_code, boost::asio::streambuf* buffer)
+void producer::handle_write_request(const boost::system::error_code& error_code
+		, std::size_t /*bytes_transferred*/
+		, message_ptr_t msg_ptr
+		, send_error_handler_function error_handler)
 {
-	if (error_code)
-	{
-		fail_fast_error_handler(error_code);
-	}
 
-	delete buffer;
+   	if (error_code)
+	{
+		if (error_handler == nullptr)
+		{
+			throw boost::system::system_error(error_code);
+		} else
+		{
+			error_handler(error_code, msg_ptr);
+		}
+	}
 }
 
 }
