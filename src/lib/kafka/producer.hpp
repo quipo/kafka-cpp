@@ -26,6 +26,8 @@
 
 #include <string>
 #include <vector>
+#include <memory>
+#include <functional>
 
 #include <boost/array.hpp>
 #include <boost/asio.hpp>
@@ -39,36 +41,86 @@ namespace kafka {
 
 const uint32_t use_random_partition = 0xFFFFFFFF;
 
+class producer;
+/*
+ * Class that encapsulates a kafka encoded message.
+ * It can only be created by the producer using the encode functions.
+ *
+ */
+class message
+{
+	message( message && ) = delete;
+	message( const message & ) = delete;
+
+private:
+	friend class producer;
+
+	message(std::string in): content{in}{};
+	std::string content;
+};
+typedef std::shared_ptr<message> message_ptr_t;
+
 class producer
 {
 public:
-	typedef boost::function<void(boost::system::error_code const&)> error_handler_function;
+	typedef void(*connect_error_handler_function)(boost::system::error_code const&);
+	typedef void(*send_error_handler_function)(boost::system::error_code const&, message_ptr_t msg_ptr);
 
-	producer(compression_type const compression, boost::asio::io_service& io_service, error_handler_function const& error_handler = error_handler_function());
+	producer(compression_type const compression, boost::asio::io_service& io_service);
 	~producer();
 
-	bool connect(std::string const& hostname, uint16_t const port);
-	bool connect(std::string const& hostname, std::string const& servicename);
+	bool connect(std::string const& hostname
+			, uint16_t const port
+			, connect_error_handler_function error_handler = nullptr);
+	bool connect(std::string const& hostname
+			, std::string const& servicename
+			, connect_error_handler_function error_handler = nullptr);
 
 	bool close();
 	bool is_connected() const;
 	bool is_connecting() const;
 
-	bool send(std::string const& message, std::string const& topic, uint32_t const partition = use_random_partition)
+
+	/*
+	 * Function to encode the required content into a kafka message object.
+	 *
+	 */
+	message_ptr_t encode(std::string const& message, std::string const& topic, uint32_t const partition = use_random_partition)
 	{
 		boost::array<std::string, 1> messages = { { message } };
-		return send(messages, topic, partition);
+		return encode(messages, topic, partition);
 	}
 
-	bool send(char const* message, std::string const& topic, uint32_t const partition = use_random_partition)
+	message_ptr_t encode(char const* message, std::string const& topic, uint32_t const partition = use_random_partition)
 	{
 		boost::array<std::string, 1> messages = { { message } };
-		return send(messages, topic, partition);
+		return encode(messages, topic, partition);
 	}
 
-	// TODO: replace this with a sending of the buffered data so encode is called prior to send this will allow for decoupling from the encoder
 	template <typename List>
-	bool send(List const& messages, std::string const& topic, uint32_t const partition = use_random_partition)
+	message_ptr_t encode(List const& messages, std::string const& topic, uint32_t const partition = use_random_partition)
+	{
+		std::stringstream buffer;
+		// TODO: make this more efficient with memory allocations.
+		kafka::request(buffer, topic, partition, messages, _compression);
+
+		message_ptr_t msg_ptr{new kafka::message{buffer.str()}};
+		return msg_ptr;
+	}
+
+	/*
+	 * Function that asynchronously sends a kafka message over an existing connection.
+	 *
+	 * Optional error handler is called if asycnhronous call fails. If there is no
+	 * error_handler provided, and async call fails, boost system_error exception will be thrown
+	 * containing the boost error code.
+	 *
+	 * \param 	msg_ptr			a kafka encoded message
+	 * \param 	error_handler	function to call if async call fails
+	 * \returns	true if connection exists, false otherwise
+	 *
+	 */
+	bool send(message_ptr_t msg_ptr, send_error_handler_function error_handler = nullptr)
 	{
 		if (!is_connected())
 		{
@@ -79,11 +131,21 @@ public:
 		boost::asio::streambuf* buffer = new boost::asio::streambuf();
 		std::ostream stream(buffer);
 
-		kafka::request(stream, topic, partition, messages, _compression);
+		stream << msg_ptr->content;
 
+		// async_write will not detect far end closed and will report success
+		// If this is a problem, consider using write in a separate thread. This
+		// will require changing the class to be thread safe.
 		boost::asio::async_write(
-			_socket, *buffer,
-			boost::bind(&producer::handle_write_request, this, boost::asio::placeholders::error, buffer)
+				_socket
+				, *buffer
+				, boost::bind(&producer::handle_write_request
+							, this
+							, boost::asio::placeholders::error
+							, boost::asio::placeholders::bytes_transferred
+							, msg_ptr
+							, error_handler
+				)
 		);
 
 		return true;
@@ -96,31 +158,51 @@ private:
 	compression_type _compression;
 	boost::asio::ip::tcp::resolver _resolver;
 	boost::asio::ip::tcp::socket _socket;
-	error_handler_function _error_handler;
 
-	void handle_resolve(const boost::system::error_code& error_code, boost::asio::ip::tcp::resolver::iterator endpoints);
-	void handle_connect(const boost::system::error_code& error_code, boost::asio::ip::tcp::resolver::iterator endpoints);
-	void handle_write_request(const boost::system::error_code& error_code, boost::asio::streambuf* buffer);
 
-	/* Fail Fast Error Handler Braindump
+	void handle_resolve(const boost::system::error_code& error_code
+			, boost::asio::ip::tcp::resolver::iterator endpoints
+			, connect_error_handler_function error_handler);
+	void handle_connect(const boost::system::error_code& error_code
+			, boost::asio::ip::tcp::resolver::iterator endpoints
+			, connect_error_handler_function error_handler);
+	void handle_write_request(const boost::system::error_code& error_code
+			, std::size_t bytes_transferred
+			, message_ptr_t msg_ptr
+			, send_error_handler_function error_handler);
+
+	/*
+	 * Handler for our dummy read. If the far end closes connection, the dummy
+	 * read will fail and we can adjust the connection status.
+	 * Any async_writes in progress will still succeed (as async_read does not
+	 * seem to wait for ACK), so there might be some kafka messages lost
 	 *
-	 * If an error handler is not provided in the constructor then the default response is to throw
-	 * back the boost error_code from asio as a boost system_error exception.
-	 *
-	 * Most likely this will cause whatever thread you have processing boost io to terminate unless caught.
-	 * This is great on debug systems or anything where you use io polling to process any outstanding io,
-	 * however if your io thread is seperate and not monitored it is recommended to pass a handler to
-	 * the constructor.
 	 */
-	inline void fail_fast_error_handler(const boost::system::error_code& error_code)
+	void handle_dummy_read(std::shared_ptr<boost::array<char, 1>>
+			, const boost::system::error_code& error_code)
 	{
-		if (_error_handler.empty())
+		if (error_code)
 		{
-			throw boost::system::system_error(error_code);
-		} else {
-			_error_handler(error_code);
+				// The connection closed
+				_connected = false;
+		}
+		else
+		{
+			// strange, we should not have received anything over this connection
+			// start the dummy read again
+			std::shared_ptr<boost::array<char, 1>> buf(new boost::array<char, 1>);
+			boost::asio::async_read(_socket
+								, boost::asio::buffer(*buf)
+								, boost::bind(&producer::handle_dummy_read
+												, this
+												, buf
+												, boost::asio::placeholders::error
+											  )
+								);
 		}
 	}
+
+
 };
 
 }
