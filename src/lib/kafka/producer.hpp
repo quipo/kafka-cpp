@@ -117,7 +117,7 @@ public:
 	 *
 	 * \param 	msg_ptr			a kafka encoded message
 	 * \param 	error_handler	function to call if async call fails
-	 * \returns	true if connection exists, false otherwise
+	 * \returns	true if there is an active connection, false otherwise
 	 *
 	 */
 	bool send(message_ptr_t msg_ptr, send_error_handler_function error_handler = nullptr)
@@ -133,7 +133,7 @@ public:
 
 		stream << msg_ptr->content;
 
-		// async_write will not detect far end closed and will report success
+		// async_write will not detect far end closed connection.
 		// If this is a problem, consider using write in a separate thread. This
 		// will require changing the class to be thread safe.
 		boost::asio::async_write(
@@ -174,7 +174,7 @@ private:
 	/*
 	 * Handler for our dummy read. If the far end closes connection, the dummy
 	 * read will fail and we can adjust the connection status.
-	 * Any async_writes in progress will still succeed (as async_read does not
+	 * Any async_writes in progress will still return success (as async_read does not
 	 * seem to wait for ACK), so there might be some kafka messages lost
 	 *
 	 */

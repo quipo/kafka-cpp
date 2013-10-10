@@ -131,7 +131,7 @@ void producer::handle_connect(const boost::system::error_code& error_code
 		_connecting = false;
 		_connected = true;
 
-		// start a read that will tell us the connection has close
+		// start a read that will tell us the connection has closed
 		std::shared_ptr<boost::array<char, 1>> buf(new boost::array<char, 1>);
 		boost::asio::async_read(_socket
 					, boost::asio::buffer(*buf)
