@@ -49,8 +49,11 @@ class producer;
  */
 class message
 {
+
+	// a message object should always contain an encoded message.
+	// We allow copy construction and assignment, but we do not allow move
+	// as it will leave the original message object "empty"
 	message( message && ) = delete;
-	message( const message & ) = delete;
 
 private:
 	friend class producer;
@@ -117,12 +120,12 @@ public:
 	 *
 	 * \param 	msg_ptr			a kafka encoded message
 	 * \param 	error_handler	function to call if async call fails
-	 * \returns	true if there is an active connection, false otherwise
+	 * \returns	true if async_write is successfully started, false otherwise
 	 *
 	 */
 	bool send(message_ptr_t msg_ptr, send_error_handler_function error_handler = nullptr)
 	{
-		if (!is_connected())
+		if (!is_connected() || !msg_ptr.get())
 		{
 			return false;
 		}
