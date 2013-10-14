@@ -51,8 +51,12 @@ class message
 {
 
 	// a message object should always contain an encoded message.
-	// We allow copy construction and assignment, but we do not allow move
-	// as it will leave the original message object "empty"
+	// We could allow copy construction and assignment, but we can
+	// not allow move as it will leave the original message object "empty".
+	// Deleting the move constructor will result in deleted implicitly
+	// declared copy constructor and assignment operators, so if we really
+	// do need those, we will need to explicitly provide them. At the
+	// moment there is no need for them.
 	message( message && ) = delete;
 
 private:

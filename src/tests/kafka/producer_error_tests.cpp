@@ -79,7 +79,6 @@ BOOST_AUTO_TEST_CASE( target_lost )
 	// do we detect error
 	BOOST_CHECK_EQUAL(producer.is_connected(), false);
 
-
 	work.reset();
 	io_service.stop();
 }
@@ -108,7 +107,6 @@ BOOST_AUTO_TEST_CASE( empty_message )
 
 	kafka::message_ptr_t encoded_msg;
 	BOOST_CHECK_EQUAL(producer.send(encoded_msg),false);
-
 
 	work.reset();
 	io_service.stop();
