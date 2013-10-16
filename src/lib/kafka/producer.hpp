@@ -70,18 +70,18 @@ typedef std::shared_ptr<message> message_ptr_t;
 class producer
 {
 public:
-	typedef void(*connect_error_handler_function)(boost::system::error_code const&);
-	typedef void(*send_error_handler_function)(boost::system::error_code const&, message_ptr_t msg_ptr);
+	typedef boost::function<void(boost::system::error_code const&)> connect_error_handler_function;
+	typedef boost::function<void(boost::system::error_code const&, message_ptr_t msg_ptr)> send_error_handler_function;
 
 	producer(compression_type const compression, boost::asio::io_service& io_service);
 	~producer();
 
 	bool connect(std::string const& hostname
 			, uint16_t const port
-			, connect_error_handler_function error_handler = nullptr);
+			, connect_error_handler_function const &  error_handler = connect_error_handler_function());
 	bool connect(std::string const& hostname
 			, std::string const& servicename
-			, connect_error_handler_function error_handler = nullptr);
+			, connect_error_handler_function const & error_handler = connect_error_handler_function());
 
 	bool close();
 	bool is_connected() const;
@@ -127,7 +127,7 @@ public:
 	 * \returns	true if async_write is successfully started, false otherwise
 	 *
 	 */
-	bool send(message_ptr_t msg_ptr, send_error_handler_function error_handler = nullptr)
+	bool send(message_ptr_t msg_ptr, send_error_handler_function const & error_handler = send_error_handler_function())
 	{
 		if (!is_connected() || !msg_ptr.get())
 		{
@@ -144,7 +144,7 @@ public:
 		// If this is a problem, consider using write in a separate thread. This
 		// will require changing the class to be thread safe.
 		boost::asio::async_write(
-				_socket
+				*_socket
 				, *buffer
 				, boost::bind(&producer::handle_write_request
 							, this
@@ -160,23 +160,25 @@ public:
 
 
 private:
+	boost::asio::io_service& _io_service;
 	bool _connected;
 	bool _connecting;
 	compression_type _compression;
 	boost::asio::ip::tcp::resolver _resolver;
-	boost::asio::ip::tcp::socket _socket;
+	std::shared_ptr<boost::asio::ip::tcp::socket> _socket;
+
 
 
 	void handle_resolve(const boost::system::error_code& error_code
 			, boost::asio::ip::tcp::resolver::iterator endpoints
-			, connect_error_handler_function error_handler);
+			, connect_error_handler_function const & error_handler);
 	void handle_connect(const boost::system::error_code& error_code
 			, boost::asio::ip::tcp::resolver::iterator endpoints
-			, connect_error_handler_function error_handler);
+			, connect_error_handler_function const & error_handler);
 	void handle_write_request(const boost::system::error_code& error_code
 			, std::size_t bytes_transferred
 			, message_ptr_t msg_ptr
-			, send_error_handler_function error_handler);
+			, send_error_handler_function const & error_handler);
 
 	/*
 	 * Handler for our dummy read. If the far end closes connection, the dummy
@@ -192,13 +194,15 @@ private:
 		{
 				// The connection closed
 				_connected = false;
+				_socket->close();
+				_socket.reset(new boost::asio::ip::tcp::socket(_io_service));
 		}
 		else
 		{
 			// strange, we should not have received anything over this connection
 			// start the dummy read again
 			std::shared_ptr<boost::array<char, 1>> buf(new boost::array<char, 1>);
-			boost::asio::async_read(_socket
+			boost::asio::async_read(*_socket
 								, boost::asio::buffer(*buf)
 								, boost::bind(&producer::handle_dummy_read
 												, this

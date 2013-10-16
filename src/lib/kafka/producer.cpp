@@ -28,11 +28,12 @@
 namespace kafka {
 
 producer::producer(const compression_type compression, boost::asio::io_service& io_service)
-	: _connected(false)
+	: _io_service(io_service)
+	, _connected(false)
 	, _connecting(false)
 	, _compression(compression)
 	, _resolver(io_service)
-	, _socket(io_service)
+	, _socket(new boost::asio::ip::tcp::socket(io_service))
 {
 }
 
@@ -43,14 +44,14 @@ producer::~producer()
 
 bool producer::connect(std::string const& hostname
 		, uint16_t const port
-		, connect_error_handler_function error_handler)
+		, connect_error_handler_function const & error_handler)
 {
 	return connect(hostname, boost::lexical_cast<std::string>(port), error_handler);
 }
 
 bool producer::connect(std::string const& hostname
 		, std::string const& servicename
-		, connect_error_handler_function error_handler)
+		, connect_error_handler_function const & error_handler)
 {
 	if (_connecting) { return false; }
 	_connecting = true;
@@ -75,7 +76,8 @@ bool producer::close()
 	if (_connecting) { return false; }
 
 	_connected = false;
-	_socket.close();
+	_socket->close();
+	_socket.reset(new boost::asio::ip::tcp::socket(_io_service));
 
 	return true;
 }
@@ -92,12 +94,12 @@ bool producer::is_connecting() const
 
 void producer::handle_resolve(const boost::system::error_code& error_code
 		, boost::asio::ip::tcp::resolver::iterator endpoints
-		, connect_error_handler_function error_handler)
+		, connect_error_handler_function const & error_handler)
 {
 	if (!error_code)
 	{
 		boost::asio::ip::tcp::endpoint endpoint = *endpoints;
-		_socket.async_connect(
+		_socket->async_connect(
 			endpoint
 			, boost::bind(
 					&producer::handle_connect
@@ -111,7 +113,7 @@ void producer::handle_resolve(const boost::system::error_code& error_code
 	else
 	{
 		_connecting = false;
-		if (error_handler == nullptr)
+		if (error_handler.empty())
 		{
 			throw boost::system::system_error(error_code);
 		} else {
@@ -122,7 +124,7 @@ void producer::handle_resolve(const boost::system::error_code& error_code
 
 void producer::handle_connect(const boost::system::error_code& error_code
 		, boost::asio::ip::tcp::resolver::iterator endpoints
-		, connect_error_handler_function error_handler)
+		, connect_error_handler_function const & error_handler)
 {
 	// this check needs a resolution of boost https://svn.boost.org/trac/boost/ticket/8795
 	if (!error_code)
@@ -133,7 +135,7 @@ void producer::handle_connect(const boost::system::error_code& error_code
 
 		// start a read that will tell us the connection has closed
 		std::shared_ptr<boost::array<char, 1>> buf(new boost::array<char, 1>);
-		boost::asio::async_read(_socket
+		boost::asio::async_read(*_socket
 					, boost::asio::buffer(*buf)
 					, boost::bind(&producer::handle_dummy_read
 									, this
@@ -147,13 +149,12 @@ void producer::handle_connect(const boost::system::error_code& error_code
 		// TODO: handle connection error (we might not need this as we have others though?)
 
 		// The connection failed, but we have more potential endpoints so throw it back to handle resolve
-		_socket.close();
 		handle_resolve(boost::system::error_code(), endpoints, error_handler);
 	}
 	else
 	{
 		_connecting = false;
-		if (error_handler == nullptr)
+		if (error_handler.empty())
 		{
 			throw boost::system::system_error(error_code);
 		} else {
@@ -165,12 +166,12 @@ void producer::handle_connect(const boost::system::error_code& error_code
 void producer::handle_write_request(const boost::system::error_code& error_code
 		, std::size_t /*bytes_transferred*/
 		, message_ptr_t msg_ptr
-		, send_error_handler_function error_handler)
+		, send_error_handler_function const & error_handler)
 {
 
    	if (error_code)
 	{
-		if (error_handler == nullptr)
+		if (error_handler.empty())
 		{
 			throw boost::system::system_error(error_code);
 		} else
